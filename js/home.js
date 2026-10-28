@@ -37,7 +37,7 @@ var DESKTOP_ICONS = [
 
 var DESKTOP_PAGE2_ICONS = [
   { id: 'tutorial', img: 'img/wanwan.png', label: '教程', action: function() { window.showTutorialPage && showTutorialPage() } },
-  { id: 'loveDiary', fa: 'fa-solid fa-heart-pulse', label: '恋爱记', action: function() {} },
+  { id: 'loveDiary', fa: 'fa-solid fa-heart-pulse', label: '恋爱记', action: function() { window.location.href = 'love.html'; } },
   { id: 'wanwanFarm', fa: 'fa-solid fa-seedling', label: '弯弯农场', action: function() {} },
   { id: 'visualnovel', svg: SVG_ICONS.visualnovel, label: '橙光', action: function() { window.showAvgPage && showAvgPage() } },
   { id: 'terminal', fa: 'fa-solid fa-terminal', label: '终端', action: function() { window.showTerminalPage && showTerminalPage() } }
