@@ -163,13 +163,13 @@ function head(title,right=''){return `<div class="top"><h1>${title}</h1><div sty
 /* home */
 function vHome(){
   if(!S.start){
-    return head('恋爱记')+`<div class="card hero"><div class="lbl">还没有设置纪念日</div><div style="font-size:48px;margin:14px 0">🤍</div>
+return head('<span style="display:inline-block; margin-left: 35px;">恋爱记</span>', '<div class="card hero"><div class="lbl">还没有设置纪念日</div><div style="font-size:48px;margin:14px 0">♡</div><div class="muted" style="margin-bottom:18px">选一下你们在一起的第一天吧</div><input type="date" id="sd" max="${ymd(today())}" style="margin-bottom:12px"><button class="btn" onclick="setStart()">开始记录</button></div>');
     <div class="muted" style="margin-bottom:18px">选一下你们在一起的第一天吧</div>
     <input type="date" id="sd" max="${ymd(today())}" style="margin-bottom:12px"><button class="btn" onclick="setStart()">开始记录</button></div>`;
   }
   const n=daysTogether(),nm=nextMile(),na=nextAnni(),t=ymd(today()),td=S.moods[t];
   const yrs=Math.floor((n-1)/365),rest=(n-1)%365;
-  return head('恋爱记',`<div class="icon-btn" onclick="openSettings()">⚙︎</div>`)+`
+return head('<span style="display:inline-block; margin-left: 35px;">恋爱记</span>', '<div class="icon-btn" onclick="openSettings()">⚙</div>')+
   <div class="card hero">
     <div class="lbl">${esc(S.nameA)} ♡ ${esc(S.nameB)} · 在一起</div>
     <div class="num">${n}<small>天</small></div>
@@ -354,7 +354,11 @@ function openQianji(){
 
 render();
 </script>
-<!-- 极简文字返回键（适应灵动岛） -->
-<a href="index.html" style="position: fixed; top: max(20px, env(safe-area-inset-top)); left: 20px; z-index: 9999; color: #999; font-size: 15px; text-decoration: none; font-weight: 500;">返回</a>
+<!-- 左上角极简返回箭头 -->
+<a href="javascript:history.back()" style="position: fixed; top: max(20px, env(safe-area-inset-top)); left: 20px; z-index: 9999; display: flex; align-items: center; justify-content: center; text-decoration: none; color: #333;">
+    <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+    </svg>
+</a>
 </body>
 </html>
