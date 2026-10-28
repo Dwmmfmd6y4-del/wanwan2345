@@ -149,8 +149,8 @@ function closeSheet(){const m=$('#mask');if(m)m.remove()}
 
 /* ---------- render ---------- */
 function renderTabs(){
-  const T=[['home','🏠','首页'],['diary','📖','日记'],['todo','🌿','清单'],['piggy','🐷','存钱罐']];
-  $('#tabs').innerHTML=T.map(t=>`<div class="tab ${tab===t[0]?'on':''}" onclick="go('${t[0]}')"><i>${t[1]}</i>${t[2]}</div>`).join('');
+const T=[['home','','首页'],['diary','','日记'],['todo','','清单'],['piggy','','存钱罐']];
+$('#tabs').innerHTML=T.map(t=>`<div class="tab ${tab===t[0]?'on':''}" onclick="go('${t[0]}')">${t[2]}</div>`).join('');
 }
 function go(t){tab=t;render();window.scrollTo(0,0)}
 function render(){
@@ -354,7 +354,7 @@ function openQianji(){
 
 render();
 </script>
-<!-- 悬浮返回小手机按钮 -->
-<a href="index.html" style="position: fixed; top: 15px; left: 15px; z-index: 9999; background: rgba(255,255,255,0.8); border: 1px solid #ddd; border-radius: 20px; padding: 5px 12px; font-size: 14px; color: #333; text-decoration: none; box-shadow: 0 2px 5px rgba(0,0,0,0.1);"> ⬅️ 返回桌面 </a>
+<!-- 极简文字返回键（适应灵动岛） -->
+<a href="index.html" style="position: fixed; top: max(20px, env(safe-area-inset-top)); left: 20px; z-index: 9999; color: #999; font-size: 15px; text-decoration: none; font-weight: 500;">返回</a>
 </body>
 </html>
