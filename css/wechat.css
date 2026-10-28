@@ -6720,3 +6720,28 @@ html.has-android-bottom-inset .chat-input-bar {
   background: rgba(87, 107, 149, 0.1);
   white-space: nowrap;
 }
+
+
+/* ===== 我 → 角色朋友圈 设置页 ===== */
+.char-moment-settings-page .cms-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.char-moment-settings-page .cs-section { flex: none; }
+.char-moment-settings-page .cms-select {
+  width: 150px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  font-size: 14px;
+  text-align: right;
+  text-align-last: right;
+}
+.char-moment-settings-page .cs-memory-input { font-size: 16px; }
+.char-moment-settings-page .cms-char-list { margin: 2px 0 4px; }
+.char-moment-settings-page .cms-char-row { padding: 10px 14px; }
+.char-moment-settings-page .cms-char-row + .cms-char-row::before { left: 66px; right: 14px; }
+.char-moment-settings-page .cms-char-row .chat-avatar { overflow: hidden; border-radius: 4px; }
+.char-moment-settings-page .cms-char-row .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.char-moment-settings-page #cms-run-now { margin-top: 4px; }
+.char-moment-settings-page #cms-run-now:disabled { opacity: 0.5; }
