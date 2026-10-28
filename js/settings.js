@@ -3263,7 +3263,7 @@ async function fetchAI(cfg, messages, opts) {
   var activeMessages = originalMessages.slice()
   var tools = Array.isArray(opts.tools) ? opts.tools.filter(Boolean) : []
   var toolsEnabled = tools.length > 0 && typeof opts.toolExecutor === 'function'
-  var maxToolCalls = Math.max(1, Math.min(20, Number(opts.maxToolCalls) || 6))
+  var maxToolCalls = Math.max(1, Math.min(40, Number(opts.maxToolCalls) || 6))
   var toolCallCount = 0
   var toolLimitNotified = false
   var toolSession = getToolSession(opts)

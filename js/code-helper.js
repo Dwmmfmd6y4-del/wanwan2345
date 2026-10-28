@@ -9,6 +9,8 @@
   var TOKEN_KEY = 'wanwan_codehelper_token'
   var CFG_KEY = 'codeHelperConfig'
   var CHAT_KEY = 'codeHelperChat'
+  var SESS_KEY = 'codeHelperSessions'
+  var MAX_SESSIONS = 30
   var API = 'https://api.github.com'
   var TEXT_EXT = /\.(js|mjs|cjs|jsx|ts|tsx|json|html|htm|css|scss|md|txt|svg|xml|yml|yaml|toml|py|java|kt|go|rs|c|h|cpp|sh|sql|vue|map|webmanifest)$/i
   var MAX_FILE_BYTES = 1500000
@@ -25,7 +27,15 @@
     treeRef: '',
     files: {},             // path -> { text, sha }
     staged: {},            // path -> { original, current, sha, isNew, edits: [{ reason, oldText, newText }] }
-    toolSession: null
+    toolSession: null,
+    sessions: [],          // [{ id, title, msgs, updatedAt }]
+    sid: '',               // 当前会话 id
+    undo: [],              // 已删除的消息栈：{ msg, index }
+    undoTimer: null
+  }
+
+  function mkId() {
+    return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
   }
 
   function esc(v) {
@@ -48,17 +58,145 @@
 
   async function loadStored() {
     try {
-      var rows = await db.config.bulkGet([CFG_KEY, CHAT_KEY])
+      var rows = await db.config.bulkGet([CFG_KEY, CHAT_KEY, SESS_KEY])
       if (rows[0] && rows[0].value) _state.cfg = Object.assign({ repo: '', branch: '' }, rows[0].value)
-      if (rows[1] && Array.isArray(rows[1].value)) _state.msgs = rows[1].value
+      var sess = rows[2] && rows[2].value
+      if (sess && Array.isArray(sess.sessions) && sess.sessions.length) {
+        _state.sessions = sess.sessions
+        _state.sid = sess.sid
+      } else if (rows[1] && Array.isArray(rows[1].value) && rows[1].value.length) {
+        _state.sessions = [{ id: mkId(), title: '', msgs: rows[1].value, updatedAt: Date.now() }]
+        _state.sid = _state.sessions[0].id
+      }
+      var cur = _state.sessions.filter(function(x) { return x.id === _state.sid })[0]
+      if (!cur && _state.sessions.length) { cur = _state.sessions[0]; _state.sid = cur.id }
+      _state.msgs = cur ? cur.msgs : []
+      _state.msgs.forEach(function(m) { if (!m.id) m.id = mkId() })
     } catch (_) {}
   }
   function saveCfg() {
     return db.config.put({ key: CFG_KEY, value: { repo: _state.cfg.repo, branch: _state.cfg.branch } })
   }
+  function sessionTitle(msgs) {
+    var first = (msgs || []).filter(function(m) { return m.role === 'user' })[0]
+    var t = first ? String(first.content || '').replace(/\s+/g, ' ').trim() : ''
+    return t ? t.slice(0, 24) : '新会话'
+  }
   function saveChat() {
     var keep = _state.msgs.slice(-60)
-    return db.config.put({ key: CHAT_KEY, value: keep }).catch(function() {})
+    var cur = _state.sessions.filter(function(x) { return x.id === _state.sid })[0]
+    if (!cur) {
+      if (!keep.length) return Promise.resolve()
+      cur = { id: _state.sid || mkId(), title: '', msgs: keep, updatedAt: Date.now() }
+      _state.sid = cur.id
+      _state.sessions.unshift(cur)
+    }
+    cur.msgs = keep
+    cur.title = sessionTitle(keep)
+    cur.updatedAt = Date.now()
+    _state.sessions = _state.sessions.filter(function(x) { return x.msgs.length || x.id === _state.sid }).slice(0, MAX_SESSIONS)
+    return db.config.put({ key: SESS_KEY, value: { sid: _state.sid, sessions: _state.sessions } }).catch(function() {})
+  }
+
+  // ===== 新会话 / 历史会话 =====
+  function clearUndo() {
+    _state.undo = []
+    if (_state.undoTimer) { clearTimeout(_state.undoTimer); _state.undoTimer = null }
+  }
+  async function newSession() {
+    if (_state.busy) { window.toast('回复进行中，稍后再开新会话'); return }
+    if (!_state.msgs.length) { _state.view = 'chat'; render(); window.toast('当前已经是新会话'); return }
+    await saveChat()
+    var fresh = { id: mkId(), title: '新会话', msgs: [], updatedAt: Date.now() }
+    _state.sessions.unshift(fresh)
+    _state.sid = fresh.id
+    _state.msgs = []
+    clearUndo()
+    _state.view = 'chat'
+    await db.config.put({ key: SESS_KEY, value: { sid: _state.sid, sessions: _state.sessions } }).catch(function() {})
+    render()
+    window.toast('已新建会话')
+  }
+  function openSession(id) {
+    if (_state.busy) { window.toast('回复进行中，稍后再切换'); return }
+    var target = _state.sessions.filter(function(x) { return x.id === id })[0]
+    if (!target) return
+    _state.sid = id
+    _state.msgs = target.msgs
+    _state.msgs.forEach(function(m) { if (!m.id) m.id = mkId() })
+    clearUndo()
+    _state.view = 'chat'
+    saveChat()
+    render()
+  }
+  function deleteSession(id) {
+    if (_state.busy && id === _state.sid) { window.toast('回复进行中，无法删除当前会话'); return }
+    _state.sessions = _state.sessions.filter(function(x) { return x.id !== id })
+    if (id === _state.sid) {
+      var next = _state.sessions[0]
+      _state.sid = next ? next.id : ''
+      _state.msgs = next ? next.msgs : []
+      clearUndo()
+    }
+    db.config.put({ key: SESS_KEY, value: { sid: _state.sid, sessions: _state.sessions } }).catch(function() {})
+    render()
+  }
+  function fmtTime(ts) {
+    var d = new Date(ts || Date.now())
+    var p = function(n) { return (n < 10 ? '0' : '') + n }
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+  }
+  function renderHistory(shell) {
+    var rows = _state.sessions.slice().sort(function(a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0) })
+    shell.innerHTML = '<div class="codehelper-history">' + (rows.length ? rows.map(function(x) {
+      return '<div class="codehelper-hist-row' + (x.id === _state.sid ? ' is-current' : '') + '" data-ch-open="' + esc(x.id) + '">' +
+        '<div class="codehelper-hist-info"><strong>' + esc(x.title || sessionTitle(x.msgs)) + '</strong>' +
+        '<small>' + fmtTime(x.updatedAt) + ' · ' + x.msgs.length + ' 条消息' + (x.id === _state.sid ? ' · 当前' : '') + '</small></div>' +
+        '<button type="button" data-ch-delsess="' + esc(x.id) + '" aria-label="删除会话"><i class="fa-solid fa-trash-can"></i></button></div>'
+    }).join('') : '<div class="codehelper-empty"><i class="fa-solid fa-clock-rotate-left"></i><p>还没有历史会话</p></div>') + '</div>'
+    shell.querySelectorAll('[data-ch-delsess]').forEach(function(btn) {
+      btn.addEventListener('click', function(ev) {
+        ev.stopPropagation()
+        if (confirm('删除这个会话？删除后无法恢复。')) deleteSession(btn.getAttribute('data-ch-delsess'))
+      })
+    })
+    shell.querySelectorAll('[data-ch-open]').forEach(function(row) {
+      row.addEventListener('click', function() { openSession(row.getAttribute('data-ch-open')) })
+    })
+  }
+
+  // ===== 删除 / 撤销消息 =====
+  function deleteMessage(id) {
+    var idx = -1
+    _state.msgs.forEach(function(m, i) { if (m.id === id) idx = i })
+    if (idx < 0) return
+    var removed = _state.msgs.splice(idx, 1)[0]
+    _state.undo.push({ msg: removed, index: idx })
+    if (_state.undo.length > 20) _state.undo.shift()
+    saveChat()
+    renderChatBody({ keepScroll: true })
+    showUndoBar()
+  }
+  function undoDelete() {
+    var last = _state.undo.pop()
+    if (!last) return
+    _state.msgs.splice(Math.min(last.index, _state.msgs.length), 0, last.msg)
+    saveChat()
+    renderChatBody({ keepScroll: true })
+    showUndoBar()
+  }
+  function showUndoBar() {
+    var bar = document.getElementById('codehelper-undo')
+    if (!bar) return
+    if (_state.undoTimer) { clearTimeout(_state.undoTimer); _state.undoTimer = null }
+    if (!_state.undo.length) { bar.hidden = true; return }
+    bar.querySelector('span').textContent = '已删除 ' + _state.undo.length + ' 条消息'
+    bar.hidden = false
+    _state.undoTimer = setTimeout(function() {
+      bar.hidden = true
+      _state.undo = []
+      _state.undoTimer = null
+    }, 8000)
   }
 
   function parseRepo(input) {
@@ -447,8 +585,8 @@
     if (!text) return
     if (typeof window.callMcpAI !== 'function') { window.toast('AI 接口未就绪'); return }
     _state.busy = true
-    _state.msgs.push({ role: 'user', content: text })
-    var reply = { role: 'assistant', content: '', trace: [] }
+    _state.msgs.push({ id: mkId(), role: 'user', content: text })
+    var reply = { id: mkId(), role: 'assistant', content: '', trace: [] }
     renderChatBody({ pending: reply })
     setComposerBusy(true)
     try {
@@ -457,7 +595,7 @@
       var answer = await window.callMcpAI(chatMessagesForApi(), {
         system: buildSystemPrompt(branch),
         tools: TOOL_DEFS,
-        maxToolCalls: 14,
+        maxToolCalls: 30,
         toolSession: _state.toolSession,
         toolExecutor: async function(name, args) {
           var statusLine = reply.trace[reply.trace.length - 1]
@@ -539,6 +677,8 @@
       '<header class="page-header codehelper-header">' +
         '<button class="header-back" type="button" aria-label="返回"><i class="fa fa-angle-left"></i></button>' +
         '<div class="codehelper-title-wrap"><span class="header-title">代码助手</span><small id="codehelper-sub"></small></div>' +
+        '<button class="codehelper-hbtn" type="button" data-ch-new aria-label="新会话"><i class="fa-solid fa-plus"></i></button>' +
+        '<button class="codehelper-hbtn" type="button" data-ch-history aria-label="历史会话"><i class="fa-solid fa-clock-rotate-left"></i></button>' +
         '<button class="codehelper-hbtn" type="button" data-ch-changes aria-label="待提交"><i class="fa-solid fa-code-commit"></i><span class="codehelper-badge" id="codehelper-badge" hidden>0</span></button>' +
         '<button class="codehelper-hbtn" type="button" data-ch-settings aria-label="设置"><i class="fa-solid fa-gear"></i></button>' +
       '</header>' +
@@ -546,6 +686,11 @@
     page.querySelector('.header-back').addEventListener('click', function() {
       if (_state.view === 'chat') window.closePage('codehelper-page')
       else { _state.view = 'chat'; render() }
+    })
+    page.querySelector('[data-ch-new]').addEventListener('click', function() { newSession() })
+    page.querySelector('[data-ch-history]').addEventListener('click', function() {
+      _state.view = _state.view === 'history' ? 'chat' : 'history'
+      render()
     })
     page.querySelector('[data-ch-settings]').addEventListener('click', function() {
       _state.view = _state.view === 'settings' ? 'chat' : 'settings'
@@ -593,10 +738,16 @@
     }).join('') + '</div>'
   }
 
+  function msgTools(m) {
+    return '<div class="codehelper-msg-tools">' +
+      '<button type="button" data-ch-copy="' + esc(m.id) + '"><i class="fa-regular fa-copy"></i>复制</button>' +
+      '<button type="button" class="is-danger" data-ch-del="' + esc(m.id) + '"><i class="fa-solid fa-trash-can"></i>删除</button></div>'
+  }
+
   function msgHtml(m) {
-    if (m.role === 'user') return '<div class="codehelper-msg is-user"><div class="codehelper-bubble">' + esc(m.content).replace(/\n/g, '<br>') + '</div></div>'
-    return '<div class="codehelper-msg is-ai">' + traceHtml(m.trace) +
-      (m.content ? '<div class="codehelper-bubble' + (m.isError ? ' is-error' : '') + '">' + renderRichText(m.content) + '</div>' : '') + '</div>'
+    if (m.role === 'user') return '<div class="codehelper-msg is-user" data-mid="' + esc(m.id) + '"><div class="codehelper-bubble">' + esc(m.content).replace(/\n/g, '<br>') + '</div>' + msgTools(m) + '</div>'
+    return '<div class="codehelper-msg is-ai" data-mid="' + esc(m.id) + '">' + traceHtml(m.trace) +
+      (m.content ? '<div class="codehelper-bubble' + (m.isError ? ' is-error' : '') + '">' + renderRichText(m.content) + '</div>' + msgTools(m) : '') + '</div>'
   }
 
   function renderChatBody(opts) {
@@ -616,14 +767,16 @@
         '<button type="button" data-ch-chip="帮我搜索代码里所有用到「」的地方">搜索某个功能</button>' +
         '</div></div>'
     }
+    var prevTop = box.scrollTop
     box.innerHTML = html
-    box.scrollTop = box.scrollHeight
+    box.scrollTop = opts.keepScroll ? prevTop : box.scrollHeight
   }
 
   function renderChat(shell) {
     var ready = !!_state.cfg.repo
     shell.innerHTML =
       '<div class="codehelper-messages" id="codehelper-messages"></div>' +
+      '<div class="codehelper-undo" id="codehelper-undo" hidden><span></span><button type="button" data-ch-undo>撤销</button></div>' +
       (ready ? '' : '<div class="codehelper-hint"><i class="fa-solid fa-circle-info"></i>先点右上角齿轮，填写要处理的 GitHub 仓库</div>') +
       '<form class="codehelper-composer" id="codehelper-form">' +
         '<textarea id="codehelper-input" rows="1" placeholder="描述要排查或修改的问题…"></textarea>' +
@@ -644,9 +797,30 @@
       sendMessage(text)
     })
     shell.querySelector('#codehelper-messages').addEventListener('click', function(ev) {
-      var chip = ev.target.closest && ev.target.closest('[data-ch-chip]')
-      if (chip) { input.value = chip.getAttribute('data-ch-chip'); input.focus() }
+      var t = ev.target
+      var chip = t.closest && t.closest('[data-ch-chip]')
+      if (chip) { input.value = chip.getAttribute('data-ch-chip'); input.focus(); return }
+      var del = t.closest && t.closest('[data-ch-del]')
+      if (del) { deleteMessage(del.getAttribute('data-ch-del')); return }
+      var cp = t.closest && t.closest('[data-ch-copy]')
+      if (cp) {
+        var mid = cp.getAttribute('data-ch-copy')
+        var found = _state.msgs.filter(function(m) { return m.id === mid })[0]
+        if (found && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(String(found.content || '')).then(function() { window.toast('已复制') }, function() { window.toast('复制失败') })
+        } else window.toast('复制失败')
+        return
+      }
+      var bubble = t.closest && t.closest('.codehelper-bubble')
+      var msg = bubble && bubble.closest('.codehelper-msg')
+      if (msg && msg.getAttribute('data-mid') && !bubble.classList.contains('codehelper-thinking')) {
+        var wasPicked = msg.classList.contains('is-picked')
+        shell.querySelectorAll('.codehelper-msg.is-picked').forEach(function(n) { n.classList.remove('is-picked') })
+        if (!wasPicked) msg.classList.add('is-picked')
+      }
     })
+    shell.querySelector('[data-ch-undo]').addEventListener('click', undoDelete)
+    showUndoBar()
     setComposerBusy(_state.busy)
   }
 
@@ -765,9 +939,10 @@
     updateSub()
     refreshBadge()
     var title = document.querySelector('#codehelper-page .header-title')
-    if (title) title.textContent = _state.view === 'settings' ? '设置' : (_state.view === 'changes' ? '待提交' : '代码助手')
+    if (title) title.textContent = _state.view === 'settings' ? '设置' : (_state.view === 'changes' ? '待提交' : (_state.view === 'history' ? '历史会话' : '代码助手'))
     if (_state.view === 'settings') renderSettings(shell)
     else if (_state.view === 'changes') renderChanges(shell)
+    else if (_state.view === 'history') renderHistory(shell)
     else renderChat(shell)
   }
 

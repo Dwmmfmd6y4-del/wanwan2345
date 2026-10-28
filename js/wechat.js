@@ -6311,6 +6311,7 @@ async function runWechatActiveReplyCheck() {
 function ensureWechatActiveReplyMonitorStarted() {
   if (_wechatActiveReplyMonitorStarted) return
   _wechatActiveReplyMonitorStarted = true
+  try { ensureCharacterMomentSchedulerStarted() } catch (err) { console.warn('[wechat] 角色朋友圈巡检启动失败:', err) }
   runWechatActiveReplyCheck().catch(err => console.warn('[wechat] 主动回复首轮巡检异常:', err))
   setInterval(() => {
     runWechatActiveReplyCheck().catch(err => console.warn('[wechat] 主动回复巡检异常:', err))
@@ -12167,13 +12168,15 @@ async function publishAIMomentsForCharacters(charIds, momentsPage, wechatPage) {
   }
 }
 
-async function publishAIMomentForCharacter(charId, momentsPage, wechatPage) {
-  const ownerUid = getCurrentMomentsOwnerUid()
-  if (!ownerUid) { window.toast && window.toast('请先登录'); return false }
+async function publishAIMomentForCharacter(charId, momentsPage, wechatPage, opts = {}) {
+  const silent = !!opts.silent
+  const tip = msg => { if (!silent && window.toast) window.toast(msg) }
+  const ownerUid = opts.ownerUid || getCurrentMomentsOwnerUid()
+  if (!ownerUid) { tip('请先登录'); return false }
   const char = await getWechatDisplayCharacter(charId, ownerUid)
-  if (!char) { window.toast && window.toast('角色不存在'); return false }
+  if (!char) { tip('角色不存在'); return false }
   const friends = await getRelationMomentFriends(char, ownerUid)
-  window.toast && window.toast(`${getWechatDisplayName(char)} 正在发布动态...`)
+  tip(`${getWechatDisplayName(char)} 正在发布动态...`)
   try {
     const result = await generateCharacterMomentDraft(char, friends, ownerUid)
     const images = buildAIMomentImages(result)
@@ -12190,15 +12193,23 @@ async function publishAIMomentForCharacter(charId, momentsPage, wechatPage) {
       visibilityGroups: [],
       createdAt: Date.now()
     })
-    await applyAIMomentComments(momentId, result, friends)
-    await generateMomentLikesFromCharacters(momentId, friends, momentsPage, wechatPage)
+    if (!opts.noNpc) {
+      await applyAIMomentComments(momentId, result, friends)
+      await generateMomentLikesFromCharacters(momentId, friends, momentsPage, wechatPage)
+    }
     if (momentsPage && document.body.contains(momentsPage)) {
       await renderMomentsList(momentsPage, wechatPage)
+    }
+    if (opts.npcFollowup && !opts.noNpc && friends.length) {
+      // 后台继续：读取这条动态与已有评论，按好友人设补充评论 / 回复（逐条间隔，不阻塞发布）
+      db.moments.get(momentId).then(saved => {
+        if (saved) return generateCharacterMomentComments(momentId, saved, momentsPage, wechatPage)
+      }).catch(err => console.warn('[wechat] NPC 补充评论失败:', err))
     }
     return true
   } catch (e) {
     console.error('角色发布朋友圈失败：', e)
-    window.toast && window.toast('发布失败：' + (e.message || '未知错误'))
+    tip('发布失败：' + (e.message || '未知错误'))
     return false
   }
 }
@@ -12231,6 +12242,15 @@ async function buildCharacterMomentPromptContext(char, friends, ownerUid = getCu
   const loreCtx = window.getLorebookContext ? await window.getLorebookContext(char.id, []) : ''
   const recentMoments = await getScopedMoments({ ownerUid, charId: char.id, limit: 5 })
   const recentMomentLines = recentMoments.map(m => `- ${String(m.content || '(无文字内容)').trim()}`)
+  const feedLines = []
+  try {
+    const feed = (await getScopedMoments({ ownerUid, limit: 12 })).filter(m => String(m.charId) !== String(char.id)).slice(0, 5)
+    for (const m of feed) {
+      const poster = await getWechatDisplayCharacter(m.charId, ownerUid)
+      const posterName = poster ? getWechatDisplayName(poster) : '好友'
+      feedLines.push(`- ${posterName}：${String(m.content || '(图片动态)').trim().slice(0, 80)}`)
+    }
+  } catch (_) {}
   const chat = await db.chats
     .where('[ownerUid+charId]').equals([ownerUid, char.id])
     .first()
@@ -12252,6 +12272,7 @@ async function buildCharacterMomentPromptContext(char, friends, ownerUid = getCu
     profile,
     loreCtx,
     recentMomentLines,
+    feedLines,
     recentChatLines,
     friendLines,
     virtualTime
@@ -12265,6 +12286,7 @@ async function generateCharacterMomentDraft(char, friends, ownerUid = getCurrent
     profile,
     loreCtx,
     recentMomentLines,
+    feedLines,
     recentChatLines,
     friendLines,
     virtualTime
@@ -12287,6 +12309,9 @@ ${loreCtx || '(无特殊世界观，以现实生活逻辑为准)'}
 
 【最近发过的朋友圈「避免重复」】
 ${recentMomentLines.length ? recentMomentLines.join('\n') : '- (暂无)'}
+
+【朋友圈里其他人最近的动态「可作灵感或呼应，不要照抄」】
+${feedLines.length ? feedLines.join('\n') : '- (暂无)'}
 
 【最近的聊天「仅做灵感参考，不必直接关联」】
 ${recentChatLines.length ? recentChatLines.join('\n') : '(暂无)'}
@@ -12870,6 +12895,298 @@ function convertBracketEmoji(text) {
     .trim()
 }
 
+// ===== 角色朋友圈：自动发布设置（我 → 角色朋友圈）=====
+// 说明：自动发布依赖网页本身在运行，应用打开期间每分钟巡检一次；关闭应用期间不会发布，下次打开后补发一条。
+const CHAR_MOMENT_AUTO_TICK_MS = 60 * 1000
+const CHAR_MOMENT_RETRY_MS = 15 * 60 * 1000
+const CHAR_MOMENT_FREQ_OPTIONS = [
+  { value: 60, label: '每 1 小时' },
+  { value: 180, label: '每 3 小时' },
+  { value: 360, label: '每 6 小时' },
+  { value: 720, label: '每 12 小时' },
+  { value: 1440, label: '每天 1 次' },
+  { value: 2880, label: '每 2 天' }
+]
+let _charMomentSchedulerStarted = false
+let _charMomentAutoBusy = false
+
+function getCharMomentAutoKey(ownerUid) {
+  return `charMomentAuto_${ownerUid}`
+}
+
+function normalizeCharMomentAutoConfig(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {}
+  const interval = parseInt(r.intervalMinutes, 10)
+  const timeOk = v => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)
+  return {
+    enabled: !!r.enabled,
+    intervalMinutes: Number.isFinite(interval) && interval >= 10 ? Math.min(interval, 10080) : 360,
+    charIds: Array.isArray(r.charIds) ? [...new Set(r.charIds.map(x => parseInt(x, 10)).filter(Boolean))] : [],
+    npcComments: r.npcComments !== false,
+    quietEnabled: !!r.quietEnabled,
+    quietStart: timeOk(r.quietStart) ? r.quietStart : '23:00',
+    quietEnd: timeOk(r.quietEnd) ? r.quietEnd : '07:00',
+    nextAt: r.nextAt && typeof r.nextAt === 'object' ? { ...r.nextAt } : {},
+    lastAt: r.lastAt && typeof r.lastAt === 'object' ? { ...r.lastAt } : {}
+  }
+}
+
+async function getCharMomentAutoConfig(ownerUid = _wechatUid) {
+  if (!ownerUid) return normalizeCharMomentAutoConfig(null)
+  const row = await db.config.get(getCharMomentAutoKey(ownerUid))
+  return normalizeCharMomentAutoConfig(row?.value)
+}
+
+// 读取最新配置 → 修改 → 写回，避免设置页与后台巡检互相覆盖
+async function patchCharMomentAutoConfig(ownerUid, mutator) {
+  const cfg = await getCharMomentAutoConfig(ownerUid)
+  mutator(cfg)
+  await db.config.put({ key: getCharMomentAutoKey(ownerUid), value: cfg })
+  return cfg
+}
+
+function nextCharMomentDelayMs(intervalMinutes) {
+  return Math.round(intervalMinutes * 60 * 1000 * (0.75 + Math.random() * 0.5))
+}
+
+function isCharMomentQuietNow(cfg, date = new Date()) {
+  if (!cfg.quietEnabled) return false
+  const toMin = t => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
+  const cur = date.getHours() * 60 + date.getMinutes()
+  const start = toMin(cfg.quietStart)
+  const end = toMin(cfg.quietEnd)
+  if (start === end) return false
+  return start < end ? (cur >= start && cur < end) : (cur >= start || cur < end)
+}
+
+async function runCharacterMomentAutoCheck() {
+  if (_charMomentAutoBusy || !_wechatUid) return
+  const ownerUid = _wechatUid
+  const cfg = await getCharMomentAutoConfig(ownerUid)
+  if (!cfg.enabled || !cfg.charIds.length) return
+  if (isCharMomentQuietNow(cfg)) return
+  const now = Date.now()
+  const missing = cfg.charIds.filter(id => !cfg.nextAt[id])
+  if (missing.length) {
+    // 刚开启 / 新加入的角色：不立刻发，从现在起按频率计时
+    await patchCharMomentAutoConfig(ownerUid, c => {
+      missing.forEach(id => { if (!c.nextAt[id]) c.nextAt[id] = Date.now() + nextCharMomentDelayMs(c.intervalMinutes) })
+    })
+    return
+  }
+  const dueId = cfg.charIds.find(id => now >= cfg.nextAt[id])
+  if (!dueId) return
+  _charMomentAutoBusy = true
+  try {
+    const ok = await publishAIMomentForCharacter(dueId, null, null, {
+      silent: true,
+      ownerUid,
+      noNpc: !cfg.npcComments,
+      npcFollowup: cfg.npcComments
+    })
+    await patchCharMomentAutoConfig(ownerUid, c => {
+      c.nextAt[dueId] = Date.now() + (ok ? nextCharMomentDelayMs(c.intervalMinutes) : CHAR_MOMENT_RETRY_MS)
+      if (ok) c.lastAt[dueId] = Date.now()
+    })
+  } catch (err) {
+    console.warn('[wechat] 角色朋友圈自动发布失败:', err)
+  } finally {
+    _charMomentAutoBusy = false
+  }
+}
+
+function ensureCharacterMomentSchedulerStarted() {
+  if (_charMomentSchedulerStarted) return
+  _charMomentSchedulerStarted = true
+  setTimeout(() => runCharacterMomentAutoCheck().catch(err => console.warn('[wechat] 角色朋友圈首轮巡检异常:', err)), 5000)
+  setInterval(() => {
+    runCharacterMomentAutoCheck().catch(err => console.warn('[wechat] 角色朋友圈巡检异常:', err))
+  }, CHAR_MOMENT_AUTO_TICK_MS)
+}
+
+function formatCharMomentTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+async function openCharacterMomentSettingsPage() {
+  if (!_wechatUid) { window.toast && window.toast('请先登录'); return }
+  const old = document.getElementById('char-moment-settings-page')
+  if (old) old.remove()
+  const page = document.createElement('div')
+  page.id = 'char-moment-settings-page'
+  page.className = 'full-page thought-presets-page char-moment-settings-page'
+  page.innerHTML = `
+    <div class="page-header">
+      <button class="header-back" id="btn-cms-back"><i class="fa fa-angle-left"></i></button>
+      <span class="header-title">角色朋友圈</span>
+      <span class="wfp-header-spacer"></span>
+    </div>
+    <div class="tp-list cms-body" id="cms-body"></div>
+  `
+  window.openPage(page)
+  page.querySelector('#btn-cms-back').addEventListener('click', () => window.closePage('char-moment-settings-page'))
+  await renderCharacterMomentSettings(page, _wechatUid)
+}
+
+async function renderCharacterMomentSettings(page, ownerUid) {
+  const body = page.querySelector('#cms-body')
+  if (!body) return
+  const cfg = await getCharMomentAutoConfig(ownerUid)
+  const chars = (await db.characters.toArray())
+    .filter(c => (c.type === 'char' || c.type === 'npc') && c.id !== ownerUid)
+  const displayChars = (await Promise.all(chars.map(c => getWechatDisplayCharacter(c.id, ownerUid)))).filter(Boolean)
+  displayChars.sort((a, b) => getWechatDisplayName(a).localeCompare(getWechatDisplayName(b), 'zh-CN'))
+  const freqValues = CHAR_MOMENT_FREQ_OPTIONS.map(o => o.value)
+  const isCustom = !freqValues.includes(cfg.intervalMinutes)
+  const toggle = (id, checked) => `
+    <label class="toggle-wrap">
+      <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>`
+  const charRows = displayChars.length ? displayChars.map(char => {
+    const name = getWechatDisplayName(char)
+    const avatarUrl = getWechatDisplayAvatar(char)
+    const on = cfg.charIds.includes(char.id)
+    const last = cfg.lastAt[char.id] ? `上次 ${formatCharMomentTime(cfg.lastAt[char.id])}` : '还没自动发过'
+    const next = on && cfg.enabled && cfg.nextAt[char.id] ? ` · 下次约 ${formatCharMomentTime(cfg.nextAt[char.id])}` : ''
+    return `
+      <div class="tp-row cms-char-row" data-char-id="${char.id}">
+        <div class="chat-avatar" style="width:40px;height:40px;flex-shrink:0">
+          ${avatarUrl ? `<img src="${wcEscHtml(avatarUrl)}">` : buildWechatInitialAvatarHTML(name)}
+        </div>
+        <div class="tp-row-info">
+          <div class="tp-row-name">${wcEscHtml(name)}</div>
+          <div class="tp-row-meta">${wcEscHtml(last + next)}</div>
+        </div>
+        <label class="toggle-wrap">
+          <input type="checkbox" class="cms-char-check" data-char-id="${char.id}" ${on ? 'checked' : ''}>
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>`
+  }).join('') : `<div class="tp-empty"><div class="tp-empty-text">暂无可发动态的角色</div><div class="tp-empty-sub">先在通讯录里添加角色</div></div>`
+
+  body.innerHTML = `
+    <div class="cs-section">
+      <div class="cs-section-label">自动发布</div>
+      <div class="cs-section-sub">开启后，应用保持打开期间，选中的角色会按频率自动发朋友圈</div>
+      <div class="cs-status-toggle-row"><span>启用自动发布</span>${toggle('cms-enabled', cfg.enabled)}</div>
+    </div>
+    <div class="cs-section">
+      <div class="cs-section-label">发布频率</div>
+      <div class="cs-section-sub">每个角色单独计时，实际间隔会随机浮动约 ±25%，更像真人</div>
+      <div class="cs-memory-row">
+        <span>发布间隔</span>
+        <select class="input-field cms-select" id="cms-interval">
+          ${CHAR_MOMENT_FREQ_OPTIONS.map(o => `<option value="${o.value}" ${o.value === cfg.intervalMinutes ? 'selected' : ''}>${o.label}</option>`).join('')}
+          <option value="custom" ${isCustom ? 'selected' : ''}>自定义</option>
+        </select>
+      </div>
+      <div class="cs-memory-row" id="cms-custom-row" style="${isCustom ? '' : 'display:none'}">
+        <span>自定义间隔（分钟）</span>
+        <input class="input-field cs-memory-input" id="cms-custom-minutes" type="number" min="10" max="10080" step="1" value="${cfg.intervalMinutes}">
+      </div>
+      <div class="cs-status-toggle-row"><span>启用免打扰时段</span>${toggle('cms-quiet-enabled', cfg.quietEnabled)}</div>
+      <div class="cs-memory-row" id="cms-quiet-row" style="${cfg.quietEnabled ? '' : 'display:none'}">
+        <span>免打扰时段</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input class="input-field cs-memory-input" id="cms-quiet-start" type="time" value="${wcEscHtml(cfg.quietStart)}">
+          <span style="color:var(--c-sub)">-</span>
+          <input class="input-field cs-memory-input" id="cms-quiet-end" type="time" value="${wcEscHtml(cfg.quietEnd)}">
+        </div>
+      </div>
+    </div>
+    <div class="cs-section">
+      <div class="cs-section-label">NPC 评论</div>
+      <div class="cs-section-sub">发布时读取角色人设、世界观和已有朋友圈；发布后 NPC 好友会按各自人设与关系评论，并回复已有评论</div>
+      <div class="cs-status-toggle-row"><span>NPC 好友评论互动</span>${toggle('cms-npc-comments', cfg.npcComments)}</div>
+    </div>
+    <div class="cs-section">
+      <div class="cs-section-label">参与角色</div>
+      <div class="cs-section-sub">只对打开开关的角色自动发布</div>
+      <div class="tp-list-card cms-char-list">${charRows}</div>
+      <button class="btn-pill btn-full" id="cms-run-now" type="button">立即让选中的角色各发一条</button>
+    </div>
+  `
+
+  const persist = (mutator, rerender = false) => patchCharMomentAutoConfig(ownerUid, mutator).then(() => {
+    if (rerender) return renderCharacterMomentSettings(page, ownerUid)
+  })
+  body.querySelector('#cms-enabled').addEventListener('change', e => {
+    const on = e.target.checked
+    persist(c => { c.enabled = on; if (on) c.nextAt = {} }, true)
+  })
+  const applyInterval = minutes => {
+    const v = Math.max(10, Math.min(10080, parseInt(minutes, 10) || 360))
+    persist(c => { c.intervalMinutes = v; c.nextAt = {} }, true)
+  }
+  body.querySelector('#cms-interval').addEventListener('change', e => {
+    if (e.target.value === 'custom') {
+      body.querySelector('#cms-custom-row').style.display = ''
+      body.querySelector('#cms-custom-minutes').focus()
+      return
+    }
+    applyInterval(e.target.value)
+  })
+  body.querySelector('#cms-custom-minutes').addEventListener('change', e => applyInterval(e.target.value))
+  body.querySelector('#cms-quiet-enabled').addEventListener('change', e => {
+    const on = e.target.checked
+    body.querySelector('#cms-quiet-row').style.display = on ? '' : 'none'
+    persist(c => { c.quietEnabled = on })
+  })
+  body.querySelector('#cms-quiet-start').addEventListener('change', e => { const v = e.target.value; if (v) persist(c => { c.quietStart = v }) })
+  body.querySelector('#cms-quiet-end').addEventListener('change', e => { const v = e.target.value; if (v) persist(c => { c.quietEnd = v }) })
+  body.querySelector('#cms-npc-comments').addEventListener('change', e => {
+    const on = e.target.checked
+    persist(c => { c.npcComments = on })
+  })
+  body.querySelectorAll('.cms-char-check').forEach(input => {
+    input.addEventListener('change', () => {
+      const id = parseInt(input.dataset.charId, 10)
+      const on = input.checked
+      persist(c => {
+        const set = new Set(c.charIds)
+        if (on) { set.add(id); delete c.nextAt[id] } else { set.delete(id); delete c.nextAt[id] }
+        c.charIds = [...set]
+      }, true)
+    })
+  })
+  body.querySelector('#cms-run-now').addEventListener('click', async () => {
+    const btn = body.querySelector('#cms-run-now')
+    const fresh = await getCharMomentAutoConfig(ownerUid)
+    if (!fresh.charIds.length) { window.toast && window.toast('请先打开至少一个角色的开关'); return }
+    if (_charMomentAutoBusy) { window.toast && window.toast('正在发布中，稍后再试'); return }
+    _charMomentAutoBusy = true
+    btn.disabled = true
+    let okCount = 0
+    try {
+      for (const id of fresh.charIds) {
+        const ok = await publishAIMomentForCharacter(id, null, null, {
+          ownerUid,
+          noNpc: !fresh.npcComments,
+          npcFollowup: fresh.npcComments
+        })
+        if (ok) {
+          okCount += 1
+          await patchCharMomentAutoConfig(ownerUid, c => {
+            c.lastAt[id] = Date.now()
+            if (c.enabled) c.nextAt[id] = Date.now() + nextCharMomentDelayMs(c.intervalMinutes)
+          })
+        }
+      }
+      if (okCount) window.toast && window.toast(`已发布 ${okCount} 条角色动态`)
+    } finally {
+      _charMomentAutoBusy = false
+      btn.disabled = false
+      if (document.body.contains(page)) await renderCharacterMomentSettings(page, ownerUid)
+    }
+  })
+}
+
 // ===== Tab4：我 =====
 function renderCachedWechatMe(page, container) {
   if (!page?._wechatMeHTML || !container) return false
@@ -12921,6 +13238,7 @@ function renderMeTabPage(page, container, html) {
   container.querySelector('#btn-wallet-row').addEventListener('click', () => openWechatWalletPage())
   container.querySelector('#btn-favorites-row').addEventListener('click', () => openWechatFavoritesPage())
   container.querySelector('#btn-stickers-row').addEventListener('click', () => openStickerLibraryPage())
+  container.querySelector('#btn-char-moment-row')?.addEventListener('click', () => openCharacterMomentSettingsPage())
   container.querySelector('#btn-plugin-row').addEventListener('click', () => openThoughtPresetsPage())
   container.querySelector('#btn-beauty-row').addEventListener('click', () => openChatBeautyPresetsPage())
   container.querySelector('#btn-account-switch-row').addEventListener('click', () => openWechatAccountSwitchPage())
@@ -13031,6 +13349,7 @@ function buildMeTabHTML(user, profile, posts, selfAvatar) {
         ${buildMeMenuRow('btn-wallet-row', 'fa-solid fa-credit-card', '微信支付')}
         ${buildMeMenuRow('btn-favorites-row', 'fa-solid fa-cube', '我的收藏')}
         ${buildMeMenuRow('btn-stickers-row', 'fa-solid fa-icons', '表情')}
+        ${buildMeMenuRow('btn-char-moment-row', 'fa-solid fa-camera-retro', '角色朋友圈')}
         ${buildMeMenuRow('btn-plugin-row', 'fa-solid fa-heart-circle-bolt', '插件')}
         ${buildMeMenuRow('btn-beauty-row', 'fa-solid fa-wand-sparkles', '美化')}
         <button class="me-menu-row me-switch-row" id="btn-account-switch-row" type="button">
