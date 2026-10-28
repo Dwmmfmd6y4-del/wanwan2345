@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>恋爱记</title>
+<style>
+:root{--bg:#f7f7f8;--card:#fff;--ink:#1c1c1e;--sub:#8e8e93;--line:#ececef;--soft:#f2f2f4;--pink:#ff7a8a;--pinkbg:#fff0f2}
+@media (prefers-color-scheme:dark){:root{--bg:#0f0f10;--card:#1a1a1c;--ink:#f2f2f4;--sub:#8e8e93;--line:#2a2a2d;--soft:#242427;--pinkbg:#2a1c1f}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+#app{max-width:520px;margin:0 auto;min-height:100%;padding:calc(env(safe-area-inset-top) + 20px) 16px calc(env(safe-area-inset-bottom) + 96px)}
+h1{font-size:22px;font-weight:700;letter-spacing:.5px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.icon-btn{width:36px;height:36px;border-radius:12px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;color:var(--sub);font-size:16px;cursor:pointer}
+.card{background:var(--card);border-radius:22px;padding:18px;margin-bottom:14px;border:1px solid var(--line)}
+.card h3{font-size:13px;color:var(--sub);font-weight:500;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.muted{color:var(--sub);font-size:13px}
+.hero{text-align:center;padding:30px 18px 24px}
+.hero .lbl{color:var(--sub);font-size:13px;letter-spacing:2px}
+.hero .num{font-size:68px;font-weight:700;letter-spacing:-2px;line-height:1.1;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.hero .num small{font-size:16px;font-weight:500;letter-spacing:0;margin-left:4px;color:var(--sub)}
+.hero .heart{color:var(--pink);font-size:14px;margin-top:2px}
+.pill{display:inline-block;background:var(--soft);border-radius:99px;padding:5px 12px;font-size:12px;color:var(--sub);margin:4px 3px 0}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+.stat{background:var(--soft);border-radius:16px;padding:12px 14px}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--sub)}
+.moods{display:flex;justify-content:space-between;gap:6px}
+.mood{flex:1;background:var(--soft);border-radius:16px;padding:10px 0 8px;text-align:center;cursor:pointer;border:1.5px solid transparent;transition:.15s}
+.mood i{font-style:normal;font-size:24px;display:block}
+.mood span{font-size:11px;color:var(--sub)}
+.mood.on{border-color:var(--ink);background:var(--card)}
+input,textarea,select{width:100%;border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:14px;padding:12px 14px;font:inherit;outline:none}
+textarea{resize:none;min-height:110px}
+input:focus,textarea:focus{border-color:var(--ink)}
+.btn{background:var(--ink);color:var(--bg);border:0;border-radius:14px;padding:12px 18px;font:inherit;font-weight:600;cursor:pointer;width:100%}
+.btn.ghost{background:var(--soft);color:var(--ink)}
+.btn.sm{width:auto;padding:8px 14px;font-size:13px;border-radius:12px}
+.btn.danger{background:transparent;color:#e5484d;border:1px solid var(--line)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center}
+.cal .w{font-size:11px;color:var(--sub)}
+.cal .d{aspect-ratio:1;border-radius:10px;background:var(--soft);display:grid;place-items:center;font-size:11px;color:var(--sub);position:relative}
+.cal .d.has{font-size:16px;background:var(--card);border:1px solid var(--line)}
+.cal .d.today{outline:1.5px solid var(--ink)}
+.cal .d.empty{background:none}
+.entry{padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.entry:last-child{border:0;padding-bottom:0}
+.entry .h{display:flex;justify-content:space-between;font-size:12px;color:var(--sub)}
+.entry .t{font-weight:600;margin:3px 0}
+.entry .p{color:var(--sub);font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+.todo{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.todo:last-child{border:0}
+.chk{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--sub);flex:none;display:grid;place-items:center;font-size:13px;color:transparent;cursor:pointer}
+.todo.done .chk{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.todo.done .tx{color:var(--sub);text-decoration:line-through}
+.todo .tx{flex:1}
+.todo .x{color:var(--sub);cursor:pointer;padding:4px 6px}
+.bar{height:6px;border-radius:9px;background:var(--soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ink);border-radius:9px;transition:.4s}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{background:var(--soft);border-radius:99px;padding:6px 12px;font-size:13px;color:var(--sub);cursor:pointer}
+.ring{position:relative;width:150px;height:150px;margin:6px auto 8px}
+.ring svg{transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring .c b{font-size:24px;font-variant-numeric:tabular-nums}
+.rec{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
+.rec:last-child{border:0}
+.rec .a{font-weight:600;font-variant-numeric:tabular-nums}
+.rec .a.in{color:var(--ink)}.rec .a.out{color:var(--sub)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;padding:8px 16px calc(env(safe-area-inset-bottom) + 8px);background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line)}
+.tabbar div{max-width:520px;margin:0 auto;display:flex;justify-content:space-around}
+.tab{flex:1;text-align:center;padding:6px 0;color:var(--sub);font-size:11px;cursor:pointer}
+.tab i{font-style:normal;display:block;font-size:20px;margin-bottom:1px;filter:grayscale(1);opacity:.7}
+.tab.on{color:var(--ink);font-weight:600}
+.tab.on i{filter:none;opacity:1}
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;z-index:20;animation:f .2s}
+.sheet{background:var(--bg);width:100%;max-width:520px;margin:0 auto;border-radius:26px 26px 0 0;padding:20px 16px calc(env(safe-area-inset-bottom) + 20px);max-height:88vh;overflow:auto;animation:u .25s}
+.sheet h2{font-size:17px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+.sheet .gap{height:10px}
+.lab{font-size:12px;color:var(--sub);margin:12px 0 6px}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:99px;font-size:13px;z-index:30;animation:f .2s}
+.empty{text-align:center;color:var(--sub);padding:22px 0;font-size:14px}
+.link{display:flex;align-items:center;justify-content:space-between;background:var(--soft);border-radius:16px;padding:14px;cursor:pointer;margin-top:12px}
+.link b{display:block;font-size:15px}
+@keyframes f{from{opacity:0}to{opacity:1}}
+@keyframes u{from{transform:translateY(40px);opacity:.5}to{transform:none;opacity:1}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="tabbar"><div id="tabs"></div></div>
+
+<script>
+const MOODS=[{e:'🥰',n:'甜蜜'},{e:'😊',n:'开心'},{e:'😌',n:'平静'},{e:'😔',n:'低落'},{e:'😠',n:'生气'}];
+const IDEAS=['一起看日出','拍一组情侣照','去一次游乐园','一起做顿饭','看一场电影','旅行一次','一起养只宠物','写一封情书','一起看海','互送手写信'];
+const MILES=[100,200,300,365,500,520,600,700,730,1000,1314,1500,2000,2190,3000,3650];
+const KEY='lovenote_v1';
+let S=load();
+let tab='home',calOff=0;
+
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(KEY));if(d)return d}catch(e){}
+  return {start:'',nameA:'我',nameB:'你',moods:{},diary:[],todos:[],piggy:{goal:'我们的小目标',target:5200,records:[]},qianji:'qianji://'};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const $=s=>document.querySelector(s);
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parse=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const today=()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const fmt=n=>Number(n).toLocaleString('zh-CN',{maximumFractionDigits:2});
+function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),1800)}
+
+function daysTogether(){return S.start?Math.round((today()-parse(S.start))/864e5)+1:0}
+function nextMile(){
+  const n=daysTogether();const m=MILES.find(x=>x>n);if(!m)return null;
+  const dt=new Date(parse(S.start).getTime());dt.setDate(dt.getDate()+m-1);
+  return {n:m,left:m-n,date:ymd(dt)};
+}
+function nextAnni(){
+  const s=parse(S.start),t=today();let y=t.getFullYear();
+  let a=new Date(y,s.getMonth(),s.getDate());
+  if(a<t)a=new Date(y+1,s.getMonth(),s.getDate());
+  const yrs=a.getFullYear()-s.getFullYear();
+  return {yrs,left:Math.round((a-t)/864e5)};
+}
+function streak(){
+  let c=0,d=today();
+  if(!S.moods[ymd(d)])d.setDate(d.getDate()-1);
+  while(S.moods[ymd(d)]){c++;d.setDate(d.getDate()-1)}
+  return c;
+}
+function piggyTotal(){return S.piggy.records.reduce((a,r)=>a+r.amt,0)}
+
+/* ---------- sheet ---------- */
+function sheet(html){
+  closeSheet();
+  const m=document.createElement('div');m.className='mask';m.id='mask';
+  m.innerHTML='<div class="sheet">'+html+'</div>';
+  m.addEventListener('click',e=>{if(e.target===m)closeSheet()});
+  document.body.appendChild(m);
+}
+function closeSheet(){const m=$('#mask');if(m)m.remove()}
+
+/* ---------- render ---------- */
+function renderTabs(){
+  const T=[['home','🏠','首页'],['diary','📖','日记'],['todo','🌿','清单'],['piggy','🐷','存钱罐']];
+  $('#tabs').innerHTML=T.map(t=>`<div class="tab ${tab===t[0]?'on':''}" onclick="go('${t[0]}')"><i>${t[1]}</i>${t[2]}</div>`).join('');
+}
+function go(t){tab=t;render();window.scrollTo(0,0)}
+function render(){
+  renderTabs();
+  $('#app').innerHTML=({home:vHome,diary:vDiary,todo:vTodo,piggy:vPiggy})[tab]();
+}
+
+function head(title,right=''){return `<div class="top"><h1>${title}</h1><div style="display:flex;gap:8px">${right}</div></div>`}
+
+/* home */
+function vHome(){
+  if(!S.start){
+    return head('恋爱记')+`<div class="card hero"><div class="lbl">还没有设置纪念日</div><div style="font-size:48px;margin:14px 0">🤍</div>
+    <div class="muted" style="margin-bottom:18px">选一下你们在一起的第一天吧</div>
+    <input type="date" id="sd" max="${ymd(today())}" style="margin-bottom:12px"><button class="btn" onclick="setStart()">开始记录</button></div>`;
+  }
+  const n=daysTogether(),nm=nextMile(),na=nextAnni(),t=ymd(today()),td=S.moods[t];
+  const yrs=Math.floor((n-1)/365),rest=(n-1)%365;
+  return head('恋爱记',`<div class="icon-btn" onclick="openSettings()">⚙︎</div>`)+`
+  <div class="card hero">
+    <div class="lbl">${esc(S.nameA)} ♡ ${esc(S.nameB)} · 在一起</div>
+    <div class="num">${n}<small>天</small></div>
+    <div class="heart">${yrs>0?yrs+' 年 '+rest+' 天':'从 '+S.start.replace(/-/g,'.')+' 开始'}</div>
+    <div style="margin-top:12px">
+      ${nm?`<span class="pill">距第 ${nm.n} 天还有 ${nm.left} 天</span>`:''}
+      <span class="pill">${na.left===0?'今天是'+na.yrs+'周年 🎉':'距'+na.yrs+'周年还有 '+na.left+' 天'}</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span>今天心情</span><span>${td?'已打卡 ✓':'点一下打卡'}</span></h3>
+    <div class="moods">${MOODS.map(m=>`<div class="mood ${td&&td.m===m.e?'on':''}" onclick="pickMood('${m.e}')"><i>${m.e}</i><span>${m.n}</span></div>`).join('')}</div>
+    <div style="margin-top:12px"><input id="mn" placeholder="一句话记录今天…" value="${td?esc(td.note||''):''}" onchange="saveNote(this.value)"></div>
+  </div>
+
+  <div class="row" style="margin-bottom:14px">
+    <div class="stat"><b>${streak()}</b><span>连续打卡天数</span></div>
+    <div class="stat"><b>${Object.keys(S.moods).length}</b><span>累计打卡</span></div>
+  </div>
+
+  <div class="card">${calendar()}</div>
+
+  <div class="card">
+    <h3><span>纪念日</span></h3>
+    ${nm?`<div class="rec"><span>第 ${nm.n} 天</span><span class="muted">${nm.date.replace(/-/g,'.')} · ${nm.left}天后</span></div>`:''}
+    <div class="rec"><span>${na.yrs} 周年</span><span class="muted">${na.left===0?'就是今天':na.left+' 天后'}</span></div>
+  </div>`;
+}
+function calendar(){
+  const base=new Date(today().getFullYear(),today().getMonth()+calOff,1);
+  const y=base.getFullYear(),m=base.getMonth(),first=base.getDay(),dim=new Date(y,m+1,0).getDate();
+  let h=`<h3><span>${y} 年 ${m+1} 月 · 心情日历</span><span><span style="cursor:pointer;padding:0 8px" onclick="calOff--;render()">‹</span><span style="cursor:pointer;padding:0 8px" onclick="calOff++;render()">›</span></span></h3><div class="cal">`;
+  h+='日一二三四五六'.split('').map(w=>`<div class="w">${w}</div>`).join('');
+  for(let i=0;i<first;i++)h+='<div class="d empty"></div>';
+  const t=ymd(today());
+  for(let d=1;d<=dim;d++){
+    const k=y+'-'+pad(m+1)+'-'+pad(d),r=S.moods[k];
+    h+=`<div class="d ${r?'has':''} ${k===t?'today':''}">${r?r.m:d}</div>`;
+  }
+  return h+'</div>';
+}
+function setStart(){const v=$('#sd').value;if(!v)return toast('请选择日期');S.start=v;save();render()}
+function pickMood(e){
+  const k=ymd(today());const old=S.moods[k]||{};
+  S.moods[k]={m:e,note:old.note||''};save();render();toast('已记录今天的心情');
+}
+function saveNote(v){
+  const k=ymd(today());
+  if(!S.moods[k])return toast('先选一个心情吧');
+  S.moods[k].note=v;save();toast('已保存');
+}
+function openSettings(){
+  sheet(`<h2>设置 <span class="muted" onclick="closeSheet()" style="cursor:pointer">完成</span></h2>
+  <div class="lab">在一起的第一天</div><input type="date" id="s1" value="${S.start}" max="${ymd(today())}">
+  <div class="lab">称呼</div><div class="row"><input id="s2" value="${esc(S.nameA)}" placeholder="我"><input id="s3" value="${esc(S.nameB)}" placeholder="你"></div>
+  <div class="lab">钱迹跳转链接（默认即可）</div><input id="s4" value="${esc(S.qianji||'')}" placeholder="qianji://">
+  <div class="gap"></div><button class="btn" onclick="saveSettings()">保存</button>
+  <div class="gap"></div>
+  <div class="row"><button class="btn ghost" onclick="exportData()">导出备份</button><button class="btn ghost" onclick="$('#imp').click()">导入备份</button></div>
+  <input type="file" id="imp" accept=".json" style="display:none" onchange="importData(this)">
+  <div class="muted" style="margin-top:10px;text-align:center">数据只保存在这台设备的浏览器里，换设备前记得导出备份</div>`);
+}
+function saveSettings(){
+  const a=$('#s1').value;if(a)S.start=a;
+  S.nameA=$('#s2').value.trim()||'我';S.nameB=$('#s3').value.trim()||'你';
+  S.qianji=$('#s4').value.trim()||'qianji://';
+  save();closeSheet();render();toast('已保存');
+}
+function exportData(){
+  const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='恋爱记备份-'+ymd(today())+'.json';a.click();
+}
+function importData(el){
+  const f=el.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||typeof d!=='object')throw 0;S=Object.assign(load(),d);save();closeSheet();render();toast('导入成功')}catch(e){toast('文件格式不对')}};
+  r.readAsText(f);
+}
+
+/* diary */
+function vDiary(){
+  const list=[...S.diary].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+  return head('日记',`<div class="icon-btn" onclick="editDiary()">＋</div>`)+
+  `<div class="card">${list.length?list.map(e=>`<div class="entry" onclick="editDiary('${e.id}')">
+    <div class="h"><span>${e.date.replace(/-/g,'.')}</span><span>${e.mood||''}</span></div>
+    <div class="t">${esc(e.title||'无标题')}</div><div class="p">${esc(e.text)}</div></div>`).join(''):'<div class="empty">还没有日记<br>写下今天的故事吧 ✍️</div>'}</div>`;
+}
+let dm='';
+function editDiary(id){
+  const e=S.diary.find(x=>x.id===id)||{date:ymd(today()),title:'',text:'',mood:''};
+  dm=e.mood||'';
+  sheet(`<h2>${id?'编辑日记':'写日记'}<span class="muted" onclick="closeSheet()" style="cursor:pointer">取消</span></h2>
+  <input type="date" id="d1" value="${e.date}" max="${ymd(today())}">
+  <div class="gap"></div><input id="d2" placeholder="标题（可不写）" value="${esc(e.title)}">
+  <div class="gap"></div><textarea id="d3" placeholder="今天发生了什么…">${esc(e.text)}</textarea>
+  <div class="lab">心情</div>
+  <div class="moods" id="dmoods">${MOODS.map(m=>`<div class="mood ${dm===m.e?'on':''}" onclick="pickDM('${m.e}')"><i>${m.e}</i><span>${m.n}</span></div>`).join('')}</div>
+  <div class="gap"></div><button class="btn" onclick="saveDiary('${id||''}')">保存</button>
+  ${id?`<div class="gap"></div><button class="btn danger" onclick="delDiary('${id}')">删除这篇</button>`:''}`);
+}
+function pickDM(e){dm=dm===e?'':e;[...document.querySelectorAll('#dmoods .mood')].forEach((el,i)=>el.classList.toggle('on',MOODS[i].e===dm))}
+function saveDiary(id){
+  const text=$('#d3').value.trim();if(!text)return toast('写点内容吧');
+  const o={date:$('#d1').value||ymd(today()),title:$('#d2').value.trim(),text,mood:dm};
+  if(id){Object.assign(S.diary.find(x=>x.id===id),o)}else S.diary.push({id:uid(),...o});
+  save();closeSheet();render();toast('已保存');
+}
+function delDiary(id){if(!confirm('确定删除这篇日记吗？'))return;S.diary=S.diary.filter(x=>x.id!==id);save();closeSheet();render()}
+
+/* todo */
+function vTodo(){
+  const done=S.todos.filter(t=>t.done).length,all=S.todos.length,p=all?Math.round(done/all*100):0;
+  const items=[...S.todos].sort((a,b)=>a.done-b.done);
+  const used=new Set(S.todos.map(t=>t.text));
+  const sug=IDEAS.filter(i=>!used.has(i));
+  return head('一起做的事')+`
+  <div class="card"><h3><span>完成进度</span><span>${done} / ${all}</span></h3><div class="bar"><i style="width:${p}%"></i></div></div>
+  <div class="card">
+    <div class="row" style="gap:8px"><input id="ti" placeholder="想和你一起做…" onkeydown="if(event.key==='Enter')addTodo()"><button class="btn sm" style="flex:none" onclick="addTodo()">添加</button></div>
+    ${sug.length?`<div class="chips">${sug.slice(0,6).map(s=>`<span class="chip" onclick="addTodo('${s}')">+ ${s}</span>`).join('')}</div>`:''}
+  </div>
+  <div class="card">${items.length?items.map(t=>`<div class="todo ${t.done?'done':''}"><div class="chk" onclick="toggleTodo('${t.id}')">✓</div>
+    <div class="tx">${esc(t.text)}${t.done&&t.doneDate?`<div class="muted">${t.doneDate.replace(/-/g,'.')} 完成</div>`:''}</div><span class="x" onclick="delTodo('${t.id}')">✕</span></div>`).join(''):'<div class="empty">清单还是空的<br>写下想一起完成的事吧 🌿</div>'}</div>`;
+}
+function addTodo(v){
+  const el=$('#ti');const text=(v||(el&&el.value)||'').trim();if(!text)return;
+  S.todos.push({id:uid(),text,done:false});save();render();
+}
+function toggleTodo(id){const t=S.todos.find(x=>x.id===id);t.done=!t.done;t.doneDate=t.done?ymd(today()):'';save();render();if(t.done)toast('又完成一件 ✨')}
+function delTodo(id){S.todos=S.todos.filter(x=>x.id!==id);save();render()}
+
+/* piggy */
+function vPiggy(){
+  const P=S.piggy,tot=piggyTotal(),pct=P.target>0?Math.min(100,tot/P.target*100):0,R=64,C=2*Math.PI*R;
+  const recs=[...P.records].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+  return head('存钱罐',`<div class="icon-btn" onclick="editGoal()">✎</div>`)+`
+  <div class="card" style="text-align:center">
+    <div class="muted">${esc(P.goal)}</div>
+    <div class="ring"><svg width="150" height="150"><circle cx="75" cy="75" r="${R}" fill="none" stroke="var(--soft)" stroke-width="10"/>
+    <circle cx="75" cy="75" r="${R}" fill="none" stroke="var(--pink)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct/100)}" style="transition:.6s"/></svg>
+    <div class="c"><b>${Math.round(pct)}%</b><span class="muted">已存 ¥${fmt(tot)}</span></div></div>
+    <div class="muted">目标 ¥${fmt(P.target)} · 还差 ¥${fmt(Math.max(0,P.target-tot))}</div>
+    <div class="row" style="margin-top:16px"><button class="btn" onclick="deposit(1)">存入</button><button class="btn ghost" onclick="deposit(-1)">取出</button></div>
+    <div class="link" onclick="openQianji()"><div style="text-align:left"><b>去钱迹记一笔</b><span class="muted">打开钱迹 App，记录真实账单</span></div><span style="color:var(--sub)">›</span></div>
+  </div>
+  <div class="card"><h3><span>存取记录</span><span>${recs.length} 笔</span></h3>
+  ${recs.length?recs.map(r=>`<div class="rec"><div><div>${esc(r.note||(r.amt>0?'存入':'取出'))}</div><div class="muted">${r.date.replace(/-/g,'.')}</div></div>
+    <div style="display:flex;align-items:center;gap:12px"><span class="a ${r.amt>0?'in':'out'}">${r.amt>0?'+':'−'}${fmt(Math.abs(r.amt))}</span><span class="muted" style="cursor:pointer" onclick="delRec('${r.id}')">✕</span></div></div>`).join(''):'<div class="empty">还没有记录<br>存下第一笔吧 🐷</div>'}</div>`;
+}
+function deposit(sign){
+  sheet(`<h2>${sign>0?'存入':'取出'}<span class="muted" onclick="closeSheet()" style="cursor:pointer">取消</span></h2>
+  <input type="number" inputmode="decimal" id="p1" placeholder="金额" style="font-size:22px;font-weight:700">
+  <div class="gap"></div><input id="p2" placeholder="备注，例如：一起吃火锅 / 周末基金">
+  <div class="gap"></div><button class="btn" onclick="saveRec(${sign})">确定</button>`);
+  setTimeout(()=>$('#p1').focus(),250);
+}
+function saveRec(sign){
+  const a=parseFloat($('#p1').value);if(!(a>0))return toast('请输入金额');
+  if(sign<0&&a>piggyTotal())return toast('取出金额不能超过已存金额');
+  S.piggy.records.push({id:uid(),date:ymd(today()),amt:sign*a,note:$('#p2').value.trim()});
+  save();closeSheet();render();toast(sign>0?'存好啦 🐷':'已取出');
+}
+function delRec(id){if(!confirm('删除这条记录？'))return;S.piggy.records=S.piggy.records.filter(r=>r.id!==id);save();render()}
+function editGoal(){
+  sheet(`<h2>存钱目标<span class="muted" onclick="closeSheet()" style="cursor:pointer">取消</span></h2>
+  <div class="lab">目标名称</div><input id="g1" value="${esc(S.piggy.goal)}">
+  <div class="lab">目标金额</div><input id="g2" type="number" inputmode="decimal" value="${S.piggy.target}">
+  <div class="gap"></div><button class="btn" onclick="saveGoal()">保存</button>`);
+}
+function saveGoal(){
+  S.piggy.goal=$('#g1').value.trim()||'我们的小目标';
+  const t=parseFloat($('#g2').value);S.piggy.target=t>0?t:S.piggy.target;
+  save();closeSheet();render();
+}
+function openQianji(){
+  const url=S.qianji||'qianji://';
+  let left=false;const h=()=>{if(document.hidden)left=true};
+  document.addEventListener('visibilitychange',h);
+  location.href=url;
+  setTimeout(()=>{document.removeEventListener('visibilitychange',h);if(!left)toast('没有跳转？请确认已安装钱迹')},1600);
+}
+
+render();
+</script>
+</body>
+</html>
